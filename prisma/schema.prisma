@@ -1,0 +1,72 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["fullTextSearch"]
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String    @id @default(auto()) @map("_id") @db.ObjectId
+  email     String    @unique
+  name      String    @unique
+  gender    String
+  password  String
+  posts     Post[]
+  comments  Comment[]
+  following Follows[] @relation("followedBy")
+  followers Follows[] @relation("following")
+  likes     Like[]
+}
+
+model Follows {
+  id           String @id @default(auto()) @map("_id") @db.ObjectId
+  followedBy   User   @relation("followedBy", fields: [followedById], references: [id])
+  followedById String @db.ObjectId
+  following    User   @relation("following", fields: [followingId], references: [id])
+  followingId  String @db.ObjectId
+
+  @@unique([followingId, followedById])
+}
+
+model Post {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  title       String    @unique
+  description String
+  content     String
+  image       String
+  author      User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  category    String
+  slug        String    @unique
+  authorId    String    @db.ObjectId
+  createdAt   DateTime  @default(now())
+  isEdited    Boolean   @default(false)
+  comments    Comment[]
+  imageId     String
+  likes       Like[]
+}
+
+model Like {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  likedById String @db.ObjectId
+  likedBy   User   @relation(fields: [likedById], references: [id])
+
+  postId String @db.ObjectId
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+}
+
+model Comment {
+  id      String @id @default(auto()) @map("_id") @db.ObjectId
+  comment String
+
+  cmntAuthor   User   @relation(fields: [cmntAuthorId], references: [id])
+  cmntAuthorId String @db.ObjectId
+
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+  postId String @db.ObjectId
+
+  createdAt DateTime @default(now())
+}
