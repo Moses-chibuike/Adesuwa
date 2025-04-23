@@ -17,7 +17,9 @@ import prisma from "@/app/(lib)/prisma";
 import LikeButton from "./likes";
 
 export default async function Slug({ params }) {
-    const currentUser = await decrypt(cookies().get("session")?.value);
+    // Add fallback for when no session exists or during build time
+    const sessionValue = cookies().get("session")?.value;
+    const currentUser = sessionValue ? await decrypt(sessionValue) : { success: false, id: null };
 
     const post = await prisma.post.findFirst({
         where: {
@@ -37,11 +39,11 @@ export default async function Slug({ params }) {
                     name: true,
                     password: false,
                     gender: true,
-                    followers: {
+                    followers: currentUser.id ? {
                         where: {
                             followedById: currentUser.id,
                         },
-                    },
+                    } : undefined,
                     _count: {
                         select: {
                             followers: true,
@@ -67,11 +69,11 @@ export default async function Slug({ params }) {
                     createdAt: "desc",
                 },
             },
-            likes: {
+            likes: currentUser.id ? {
                 where: {
                     likedById: currentUser.id,
                 },
-            },
+            } : undefined,
             _count: {
                 select: {
                     comments: true,
@@ -87,13 +89,15 @@ export default async function Slug({ params }) {
 
     const comments = post.comments;
 
+    // Safely check if user is following author
     const isFollowing =
-        currentUser.success && post.author.followers?.length != 0
+        currentUser.success && post.author.followers?.length > 0
             ? true
             : false;
 
+    // Safely check if post is liked by user
     const isLiked =
-        currentUser.success && post.likes.length != 0 ? true : false;
+        currentUser.success && post.likes?.length > 0 ? true : false;
 
     return (
         <div className="sm:mx-[17%] md:mx-[19%] mx-4 flex flex-col mt-10 gap-1 ">
@@ -204,7 +208,7 @@ export default async function Slug({ params }) {
             </div>
 
             <div className="w-full h-[70px] py-2">
-                {cookies().get("session")?.value ? (
+                {sessionValue ? (
                     <div className="h-[70px]">
                         <Comment
                             postId={post.id}
