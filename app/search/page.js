@@ -1,73 +1,84 @@
 import { redirect } from "next/navigation";
-import prisma from "../(lib)/prisma";
 import { MdSearch } from "react-icons/md";
 import { GrFormNextLink, GrFormPreviousLink } from "react-icons/gr";
 import Link from "next/link";
-import Image from "next/image";
-import { GoDotFill } from "react-icons/go";
-import Timeago from "../(lib)/timeago";
 import BlogCard from "../blogCard";
 
+// This is a crucial change - using dynamic rendering 
+// to prevent build-time database access
+export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
+
 export default async function Search({ searchParams }) {
-    let data = [];
     const searchString = searchParams.query || "";
-
     const currentPage = parseInt(searchParams.page) || 1;
-    const postsPerPage = 3;
-    const lastPost = currentPage * postsPerPage;
-    const startPost = lastPost - postsPerPage;
-
+    
     if (currentPage <= 0) {
         redirect(`/search?query=${searchString}&page=1`);
     }
 
-    try {
-        if (searchString !== "") {
-            data = await prisma.post.findMany({
-                where: {
-                    title: {
-                        contains: searchString,
-                        mode: "insensitive",
-                    },
-                },
-                select: {
-                    id: true,
-                    title: true,
-                    description: true,
-                    image: true,
-                    category: true,
-                    slug: true,
-                    createdAt: true,
-                    author: {
-                        select: {
-                            name: true,
-                            email: true,
-                            image: true,
-                            // Exclude password
-                        },
-                    },
-                    _count: {
-                        select: {
-                            comments: true,
-                            likes: true,
-                        },
-                    },
-                },
-            });
-        }
-    } catch (error) {
-        console.error("Error fetching search data:", error);
-        data = []; // Fallback to empty array on error
-    }
-
-    const totalPages = Math.ceil(data?.length / postsPerPage) || 1;
+    // Don't try to access database during build time
+    // We'll fetch data only during runtime
+    let data = [];
+    let result = [];
+    let totalPages = 1;
     
-    // Only redirect if we have search results and current page exceeds total pages
-    if (data.length > 0 && currentPage > totalPages) {
-        redirect(`/search?query=${searchString}&page=${totalPages}`);
+    // Only try to fetch data at runtime, not during build
+    if (process.env.NODE_ENV !== 'production' || typeof window !== 'undefined') {
+        try {
+            // Import prisma only if we're not in build
+            const { default: prisma } = await import("../(lib)/prisma");
+            
+            if (searchString !== "") {
+                data = await prisma.post.findMany({
+                    where: {
+                        title: {
+                            contains: searchString,
+                            mode: "insensitive",
+                        },
+                    },
+                    select: {
+                        id: true,
+                        title: true,
+                        description: true,
+                        image: true,
+                        category: true,
+                        slug: true,
+                        createdAt: true,
+                        author: {
+                            select: {
+                                name: true,
+                                email: true,
+                                image: true,
+                            },
+                        },
+                        _count: {
+                            select: {
+                                comments: true,
+                                likes: true,
+                            },
+                        },
+                    },
+                });
+            }
+            
+            const postsPerPage = 3;
+            totalPages = Math.ceil(data.length / postsPerPage) || 1;
+            
+            if (data.length > 0 && currentPage > totalPages) {
+                redirect(`/search?query=${searchString}&page=${totalPages}`);
+            }
+            
+            const lastPost = currentPage * postsPerPage;
+            const startPost = lastPost - postsPerPage;
+            result = data.slice(startPost, lastPost);
+            
+        } catch (error) {
+            console.error("Error fetching search data:", error);
+            data = [];
+            result = [];
+        }
     }
-
-    const result = data.slice(startPost, lastPost);
 
     async function getData(formData) {
         "use server";
@@ -121,10 +132,12 @@ export default async function Search({ searchParams }) {
             {/* result-posts area */}
             <div className="mb-3">
                 {result.length === 0 ? (
-                    <p className="text-center py-8">No posts found</p>
+                    <p className="text-center py-8">
+                        {searchString ? "No posts found" : "Enter a search term above"}
+                    </p>
                 ) : (
                     result.map((post) => (
-                        <Link href={`/blog/${post.slug}`} key={post.id}>
+                        <Link href={`/blog/${post.slug}`} key={post.id || post.slug}>
                             <BlogCard post={post} />
                         </Link>
                     ))
